@@ -19,7 +19,7 @@ import java.util.Map;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.apache.hadoop.hbase.HBaseConfiguration;
+import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.KeyValue;
 import org.apache.hadoop.hbase.client.Get;
 import org.apache.hadoop.hbase.client.HTable;
@@ -34,19 +34,17 @@ import org.apache.hadoop.hbase.util.Bytes;
 public class IndexedTable extends TransactionalTable {
 
     // TODO move these schema constants elsewhere
-    public static final byte[] INDEX_COL_FAMILY_NAME = Bytes.toBytes("__INDEX__");
-    public static final byte[] INDEX_COL_FAMILY = Bytes.add(INDEX_COL_FAMILY_NAME, new byte[] {
-        KeyValue.COLUMN_FAMILY_DELIMITER
-    });
+    public static final byte[] INDEX_COL_FAMILY = Bytes.toBytes("__INDEX__");
     public static final byte[] INDEX_BASE_ROW = Bytes.toBytes("ROW");
-    public static final byte[] INDEX_BASE_ROW_COLUMN = Bytes.add(INDEX_COL_FAMILY, INDEX_BASE_ROW);
+    public static final byte[] INDEX_BASE_ROW_COLUMN = Bytes.add(INDEX_COL_FAMILY, KeyValue.COLUMN_FAMILY_DELIM_ARRAY,
+        INDEX_BASE_ROW);
 
     static final Log LOG = LogFactory.getLog(IndexedTable.class);
 
     private final IndexedTableDescriptor indexedTableDescriptor;
     private Map<String, HTable> indexIdToTable = new HashMap<String, HTable>();
 
-    public IndexedTable(final HBaseConfiguration conf, final byte[] tableName) throws IOException {
+    public IndexedTable(final Configuration conf, final byte[] tableName) throws IOException {
         super(conf, tableName);
         this.indexedTableDescriptor = new IndexedTableDescriptor(super.getTableDescriptor());
         for (IndexSpecification spec : this.indexedTableDescriptor.getIndexes()) {
@@ -175,7 +173,7 @@ public class IndexedTable extends TransactionalTable {
 
                 List<KeyValue> results = new ArrayList<KeyValue>();
                 for (KeyValue indexKV : row.list()) {
-                    if (indexKV.matchingFamily(INDEX_COL_FAMILY_NAME)) {
+                    if (indexKV.matchingFamily(INDEX_COL_FAMILY)) {
                         continue;
                     }
                     results.add(new KeyValue(baseRow, indexKV.getFamily(), indexKV.getQualifier(), indexKV

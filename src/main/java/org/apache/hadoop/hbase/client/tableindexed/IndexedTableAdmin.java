@@ -20,8 +20,8 @@ import java.util.Map.Entry;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.ColumnNameParseException;
-import org.apache.hadoop.hbase.HBaseConfiguration;
 import org.apache.hadoop.hbase.HColumnDescriptor;
 import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.KeyValue;
@@ -47,7 +47,7 @@ public class IndexedTableAdmin extends HBaseAdmin {
      * @param conf Configuration object
      * @throws MasterNotRunningException
      */
-    public IndexedTableAdmin(final HBaseConfiguration conf) throws MasterNotRunningException {
+    public IndexedTableAdmin(final Configuration conf) throws MasterNotRunningException {
         super(conf);
     }
 
@@ -76,9 +76,7 @@ public class IndexedTableAdmin extends HBaseAdmin {
         Set<byte[]> families = new TreeSet<byte[]>(Bytes.BYTES_COMPARATOR);
         families.add(IndexedTable.INDEX_COL_FAMILY);
         for (byte[] column : indexSpec.getAllColumns()) {
-            families.add(Bytes.add(KeyValue.parseColumn(column)[0], new byte[] {
-                KeyValue.COLUMN_FAMILY_DELIMITER
-            }));
+            families.add(KeyValue.parseColumn(column)[0]);
         }
 
         for (byte[] colFamily : families) {

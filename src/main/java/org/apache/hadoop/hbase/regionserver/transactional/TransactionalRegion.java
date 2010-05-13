@@ -28,9 +28,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.hbase.HBaseConfiguration;
 import org.apache.hadoop.hbase.HRegionInfo;
 import org.apache.hadoop.hbase.KeyValue;
 import org.apache.hadoop.hbase.LeaseException;
@@ -103,10 +103,11 @@ public class TransactionalRegion extends HRegion {
      * @param regionInfo
      * @param flushListener
      */
-    public TransactionalRegion(final Path basedir, final HLog log, final FileSystem fs, final HBaseConfiguration conf,
-            final HRegionInfo regionInfo, final FlushRequester flushListener, final Leases transactionalLeases) {
+    public TransactionalRegion(final Path basedir, final HLog log, final THLog trxLog, final FileSystem fs,
+            final Configuration conf, final HRegionInfo regionInfo, final FlushRequester flushListener,
+            final Leases transactionalLeases) {
         super(basedir, log, fs, conf, regionInfo, flushListener);
-        this.hlog = null; // FIXME pass into
+        this.hlog = trxLog;
         oldTransactionFlushTrigger = conf.getInt(OLD_TRANSACTION_FLUSH, DEFAULT_OLD_TRANSACTION_FLUSH);
         this.transactionLeases = transactionalLeases;
     }

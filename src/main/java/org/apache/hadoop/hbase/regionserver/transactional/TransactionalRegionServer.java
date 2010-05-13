@@ -15,7 +15,8 @@ import java.lang.Thread.UncaughtExceptionHandler;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.apache.hadoop.hbase.HBaseConfiguration;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.HRegionInfo;
 import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.Leases;
@@ -31,6 +32,7 @@ import org.apache.hadoop.hbase.ipc.TransactionalRegionInterface;
 import org.apache.hadoop.hbase.regionserver.HRegion;
 import org.apache.hadoop.hbase.regionserver.HRegionServer;
 import org.apache.hadoop.hbase.regionserver.InternalScanner;
+import org.apache.hadoop.hbase.regionserver.wal.HLog;
 import org.apache.hadoop.hbase.util.Threads;
 import org.apache.hadoop.io.MapWritable;
 import org.apache.hadoop.util.Progressable;
@@ -55,11 +57,15 @@ public class TransactionalRegionServer extends HRegionServer implements Transact
      * @param conf
      * @throws IOException
      */
-    public TransactionalRegionServer(final HBaseConfiguration conf) throws IOException {
+    public TransactionalRegionServer(final Configuration conf) throws IOException {
         super(conf);
         cleanOldTransactionsThread = new CleanOldTransactionsChore(this, super.stopRequested);
         transactionLeases = new Leases(conf.getInt(LEASE_TIME, DEFAULT_LEASE_TIME), LEASE_CHECK_FREQUENCY);
         LOG.error("leases time:" + conf.getInt(LEASE_TIME, DEFAULT_LEASE_TIME));
+    }
+
+    protected THLog getTransactionLog() {
+        return trxHLog;
     }
 
     @Override
@@ -73,6 +79,11 @@ public class TransactionalRegionServer extends HRegionServer implements Transact
     @Override
     protected void init(final MapWritable c) throws IOException {
         super.init(c);
+        Path oldLogDir = new Path(getRootDir(), HREGION_OLDLOGDIR_NAME + "-trx");
+        Path logdir = new Path(getRootDir(), HLog.getHLogDirectoryName(this.serverInfo) + "-trx");
+
+        trxHLog = new THLog(getFileSystem(), logdir, oldLogDir, conf, null);
+
         String n = Thread.currentThread().getName();
         UncaughtExceptionHandler handler = new UncaughtExceptionHandler() {
 
@@ -89,7 +100,7 @@ public class TransactionalRegionServer extends HRegionServer implements Transact
     @Override
     protected HRegion instantiateRegion(final HRegionInfo regionInfo) throws IOException {
         HRegion r = new TransactionalRegion(HTableDescriptor.getTableDir(super.getRootDir(), regionInfo.getTableDesc()
-                .getName()), super.hlog, super.getFileSystem(), (HBaseConfiguration) super.conf, regionInfo, super
+                .getName()), super.hlog, this.trxHLog, super.getFileSystem(), super.conf, regionInfo, super
                 .getFlushRequester(), this.getTransactionalLeases());
         r.initialize(null, new Progressable() {
 

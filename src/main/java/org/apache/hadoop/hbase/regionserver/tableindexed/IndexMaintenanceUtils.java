@@ -32,7 +32,7 @@ public class IndexMaintenanceUtils {
         byte[] indexRow = indexSpec.getKeyGenerator().createIndexKey(row, columnValues);
         Put update = new Put(indexRow);
 
-        update.add(IndexedTable.INDEX_COL_FAMILY_NAME, IndexedTable.INDEX_BASE_ROW, row);
+        update.add(IndexedTable.INDEX_COL_FAMILY, IndexedTable.INDEX_BASE_ROW, row);
 
         for (byte[] col : indexSpec.getIndexedColumns()) {
             byte[] val = columnValues.get(col);

@@ -14,23 +14,22 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.hbase.HBaseConfiguration;
 import org.apache.hadoop.hbase.HRegionInfo;
 import org.apache.hadoop.hbase.KeyValue;
 import org.apache.hadoop.hbase.client.Delete;
 import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.regionserver.wal.HLog;
 import org.apache.hadoop.hbase.regionserver.wal.LogRollListener;
-import org.apache.hadoop.hbase.regionserver.wal.WALEdit;
 
 /**
  * Add support for transactional operations to the regionserver's write-ahead-log.
  */
-class THLog extends HLog {
+public class THLog extends HLog {
 
-    public THLog(final FileSystem fs, final Path dir, final Path oldLogDir, final HBaseConfiguration conf,
+    public THLog(final FileSystem fs, final Path dir, final Path oldLogDir, final Configuration conf,
             final LogRollListener listener) throws IOException {
         super(fs, dir, oldLogDir, conf, listener);
     }
@@ -74,11 +73,11 @@ class THLog extends HLog {
      */
     public void append(final HRegionInfo regionInfo, final long now, final THLogKey.TrxOp txOp, final long transactionId)
             throws IOException {
-        THLogKey key = new THLogKey(regionInfo.getRegionName(), regionInfo.getTableDesc().getName(), -1, now, txOp,
-                transactionId);
-        WALEdit e = new WALEdit();
-        e.add(new KeyValue(new byte[0], 0, 0)); // Empty KeyValue
-        super.append(regionInfo, e, now, regionInfo.isMetaRegion());
+    // THLogKey key = new THLogKey(regionInfo.getRegionName(), regionInfo.getTableDesc().getName(), -1, now, txOp,
+    // transactionId);
+    // WALEdit e = new WALEdit();
+    // e.add(new KeyValue(new byte[0], 0, 0)); // Empty KeyValue
+    // super.append(regionInfo, e, now, regionInfo.isMetaRegion());
     }
 
     /**
@@ -91,16 +90,16 @@ class THLog extends HLog {
      */
     public void append(final HRegionInfo regionInfo, final Put update, final long transactionId) throws IOException {
 
-        long commitTime = System.currentTimeMillis();
-
-        THLogKey key = new THLogKey(regionInfo.getRegionName(), regionInfo.getTableDesc().getName(), -1, commitTime,
-                THLogKey.TrxOp.OP, transactionId);
-
-        for (KeyValue value : convertToKeyValues(update)) {
-            WALEdit e = new WALEdit();
-            e.add(value);
-            super.append(regionInfo, e, commitTime, regionInfo.isMetaRegion());
-        }
+    // long commitTime = System.currentTimeMillis();
+    //
+    // THLogKey key = new THLogKey(regionInfo.getRegionName(), regionInfo.getTableDesc().getName(), -1, commitTime,
+    // THLogKey.TrxOp.OP, transactionId);
+    //
+    // for (KeyValue value : convertToKeyValues(update)) {
+    // WALEdit e = new WALEdit();
+    // e.add(value);
+    // super.append(regionInfo, e, commitTime, regionInfo.isMetaRegion());
+    // }
     }
 
     /**
@@ -112,17 +111,17 @@ class THLog extends HLog {
      * @throws IOException
      */
     public void append(final HRegionInfo regionInfo, final Delete delete, final long transactionId) throws IOException {
-
-        long commitTime = System.currentTimeMillis();
-
-        THLogKey key = new THLogKey(regionInfo.getRegionName(), regionInfo.getTableDesc().getName(), -1, commitTime,
-                THLogKey.TrxOp.OP, transactionId);
-
-        for (KeyValue value : convertToKeyValues(delete)) {
-            WALEdit e = new WALEdit();
-            e.add(value);
-            super.append(regionInfo, e, commitTime, regionInfo.isMetaRegion());
-        }
+    //
+    // long commitTime = System.currentTimeMillis();
+    //
+    // THLogKey key = new THLogKey(regionInfo.getRegionName(), regionInfo.getTableDesc().getName(), -1, commitTime,
+    // THLogKey.TrxOp.OP, transactionId);
+    //
+    // for (KeyValue value : convertToKeyValues(delete)) {
+    // WALEdit e = new WALEdit();
+    // e.add(value);
+    // super.append(regionInfo, e, commitTime, regionInfo.isMetaRegion());
+    // }
     }
 
     private List<KeyValue> convertToKeyValues(final Put update) {

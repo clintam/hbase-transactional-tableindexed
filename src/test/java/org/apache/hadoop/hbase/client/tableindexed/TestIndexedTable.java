@@ -17,7 +17,7 @@ import junit.framework.Assert;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.apache.hadoop.hbase.HBaseClusterTestCase;
+import org.apache.hadoop.hbase.HBaseTestingUtility;
 import org.apache.hadoop.hbase.HColumnDescriptor;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.HTableDescriptor;
@@ -30,14 +30,18 @@ import org.apache.hadoop.hbase.client.RowLock;
 import org.apache.hadoop.hbase.client.Scan;
 import org.apache.hadoop.hbase.regionserver.tableindexed.IndexedRegionServer;
 import org.apache.hadoop.hbase.util.Bytes;
+import org.junit.After;
+import org.junit.AfterClass;
+import org.junit.BeforeClass;
+import org.junit.Test;
 
-public class TestIndexedTable extends HBaseClusterTestCase {
+public class TestIndexedTable {
 
     private static final Log LOG = LogFactory.getLog(TestIndexedTable.class);
+    private final static HBaseTestingUtility TEST_UTIL = new HBaseTestingUtility();
 
     private static final String TABLE_NAME = "table1";
 
-    private static final byte[] FAMILY_COLON = Bytes.toBytes("family:");
     private static final byte[] FAMILY = Bytes.toBytes("family");
     private static final byte[] QUAL_A = Bytes.toBytes("a");
     private static final byte[] COL_A = Bytes.toBytes("family:a");
@@ -46,33 +50,58 @@ public class TestIndexedTable extends HBaseClusterTestCase {
     private static final int NUM_ROWS = 10;
     private static final int MAX_VAL = 10000;
 
-    private IndexedTableAdmin admin;
-    private IndexedTable table;
+    private static IndexedTableAdmin admin;
+    private static IndexedTable table;
     private Random random = new Random();
-    private HTableDescriptor desc;
+    private static HTableDescriptor desc;
 
     /** constructor */
-    public TestIndexedTable() {
-        conf.set(HConstants.REGION_SERVER_IMPL, IndexedRegionServer.class.getName());
-        conf.setInt("hbase.master.info.port", -1);
-        conf.setInt("hbase.regionserver.info.port", -1);
+    public TestIndexedTable() {}
+
+    /**
+     * @throws java.lang.Exception
+     */
+    @BeforeClass
+    public static void setUpBeforeClass() throws Exception {
+        TEST_UTIL.getConfiguration().set(HConstants.REGION_SERVER_IMPL, IndexedRegionServer.class.getName());
+
+        TEST_UTIL.startMiniCluster(3);
+        setupTables();
     }
 
-    @Override
-    protected void setUp() throws Exception {
-        super.setUp();
+    /**
+     * @throws java.lang.Exception
+     */
+    @AfterClass
+    public static void tearDownAfterClass() throws Exception {
+        TEST_UTIL.shutdownMiniCluster();
+    }
+
+    /**
+     * @throws java.lang.Exception
+     */
+
+    public static void setupTables() throws Exception {
 
         desc = new HTableDescriptor(TABLE_NAME);
-        desc.addFamily(new HColumnDescriptor(FAMILY_COLON));
+        desc.addFamily(new HColumnDescriptor(FAMILY));
 
         IndexedTableDescriptor indexDesc = new IndexedTableDescriptor(desc);
         // Create a new index that does lexicographic ordering on COL_A
         IndexSpecification colAIndex = new IndexSpecification(INDEX_COL_A, COL_A);
         indexDesc.addIndex(colAIndex);
 
-        admin = new IndexedTableAdmin(conf);
+        admin = new IndexedTableAdmin(TEST_UTIL.getConfiguration());
         admin.createIndexedTable(indexDesc);
-        table = new IndexedTable(conf, desc.getName());
+        table = new IndexedTable(TEST_UTIL.getConfiguration(), desc.getName());
+    }
+
+    /**
+     * @throws java.lang.Exception
+     */
+    @After
+    public void tearDown() throws Exception {
+    // Nothing to do.
     }
 
     private void writeInitalRows() throws IOException {
@@ -85,6 +114,7 @@ public class TestIndexedTable extends HBaseClusterTestCase {
         }
     }
 
+    @Test
     public void testInitialWrites() throws IOException {
         writeInitalRows();
         assertRowsInOrder(NUM_ROWS);
@@ -175,15 +205,17 @@ public class TestIndexedTable extends HBaseClusterTestCase {
         LOG.info("Updated row [" + Bytes.toString(update.getRow()) + "] val: [" + Bytes.toString(valueA) + "]");
         table.flushCommits();
         table.close();
-        table = new IndexedTable(conf, desc.getName());
+        table = new IndexedTable(TEST_UTIL.getConfiguration(), desc.getName());
     }
 
+    @Test
     public void testMultipleWrites() throws IOException {
         writeInitalRows();
         writeInitalRows(); // Update the rows.
         assertRowsInOrder(NUM_ROWS);
     }
 
+    @Test
     public void testDelete() throws IOException {
         writeInitalRows();
         // Delete the first row;
@@ -192,6 +224,7 @@ public class TestIndexedTable extends HBaseClusterTestCase {
         assertRowsInOrder(NUM_ROWS - 1);
     }
 
+    @Test
     public void testRowUpdate() throws IOException {
         writeInitalRows();
         int row = NUM_ROWS - 2;
@@ -200,6 +233,7 @@ public class TestIndexedTable extends HBaseClusterTestCase {
         assertRowUpdated(row, value);
     }
 
+    @Test
     public void testLockedRowUpdate() throws IOException {
         writeInitalRows();
         int row = NUM_ROWS - 2;
@@ -208,6 +242,7 @@ public class TestIndexedTable extends HBaseClusterTestCase {
         assertRowUpdated(row, value);
     }
 
+    @Test
     public void testLockedRowUpdateNoAutoFlush() throws IOException {
         writeInitalRows();
         int row = NUM_ROWS - 4;
@@ -216,6 +251,7 @@ public class TestIndexedTable extends HBaseClusterTestCase {
         assertRowUpdated(row, value);
     }
 
+    @Test
     public void testLockedRowDelete() throws IOException {
         writeInitalRows();
         // Delete the first row;

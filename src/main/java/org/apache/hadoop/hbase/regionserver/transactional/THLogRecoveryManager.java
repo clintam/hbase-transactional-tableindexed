@@ -23,6 +23,7 @@ import java.util.Map.Entry;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
@@ -43,7 +44,7 @@ class THLogRecoveryManager {
 
     private final FileSystem fileSystem;
     private final HRegionInfo regionInfo;
-    private final HBaseConfiguration conf;
+    private final Configuration conf;
 
     /**
      * @param region
@@ -51,7 +52,7 @@ class THLogRecoveryManager {
     public THLogRecoveryManager(final TransactionalRegion region) {
         this.fileSystem = region.getFilesystem();
         this.regionInfo = region.getRegionInfo();
-        this.conf = (HBaseConfiguration) region.getConf();
+        this.conf = region.getConf();
     }
 
     // For Testing

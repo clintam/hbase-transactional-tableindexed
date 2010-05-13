@@ -12,7 +12,7 @@ package org.apache.hadoop.hbase.regionserver.tableindexed;
 
 import java.io.IOException;
 
-import org.apache.hadoop.hbase.HBaseConfiguration;
+import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.HRegionInfo;
 import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.ipc.HBaseRPCProtocolVersion;
@@ -26,7 +26,7 @@ import org.apache.hadoop.util.Progressable;
  **/
 public class IndexedRegionServer extends TransactionalRegionServer implements IndexedRegionInterface {
 
-    public IndexedRegionServer(final HBaseConfiguration conf) throws IOException {
+    public IndexedRegionServer(final Configuration conf) throws IOException {
         super(conf);
     }
 
@@ -41,7 +41,7 @@ public class IndexedRegionServer extends TransactionalRegionServer implements In
     @Override
     protected HRegion instantiateRegion(final HRegionInfo regionInfo) throws IOException {
         HRegion r = new IndexedRegion(HTableDescriptor.getTableDir(super.getRootDir(), regionInfo.getTableDesc()
-                .getName()), super.hlog, super.getFileSystem(), (HBaseConfiguration) super.conf, regionInfo, super
+                .getName()), super.hlog, super.getTransactionLog(), super.getFileSystem(), super.conf, regionInfo, super
                 .getFlushRequester(), super.getTransactionalLeases());
         r.initialize(null, new Progressable() {
 
