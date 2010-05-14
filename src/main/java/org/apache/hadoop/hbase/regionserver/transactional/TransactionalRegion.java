@@ -91,7 +91,7 @@ public class TransactionalRegion extends HRegion {
 
     private AtomicInteger nextSequenceId = new AtomicInteger(0);
     private Object commitCheckLock = new Object();
-    private THLog hlog;
+    private THLog transactionLog;
     private final int oldTransactionFlushTrigger;
     private final Leases transactionLeases;
 
@@ -107,13 +107,13 @@ public class TransactionalRegion extends HRegion {
             final Configuration conf, final HRegionInfo regionInfo, final FlushRequester flushListener,
             final Leases transactionalLeases) {
         super(basedir, log, fs, conf, regionInfo, flushListener);
-        this.hlog = trxLog;
+        this.transactionLog = trxLog;
         oldTransactionFlushTrigger = conf.getInt(OLD_TRANSACTION_FLUSH, DEFAULT_OLD_TRANSACTION_FLUSH);
         this.transactionLeases = transactionalLeases;
     }
 
-    @Override
-    protected void doReconstructionLog(final Path oldLogFile, final long minSeqId, final long maxSeqId,
+    // TODO, plug this into the process somehow...
+    private void doTrxReconstructionLog(final Path oldLogFile, final long minSeqId, final long maxSeqId,
             final Progressable reporter) throws UnsupportedEncodingException, IOException {
         super.doReconstructionLog(oldLogFile, minSeqId, maxSeqId, reporter);
 
@@ -123,22 +123,34 @@ public class TransactionalRegion extends HRegion {
         }
 
         THLogRecoveryManager recoveryManager = new THLogRecoveryManager(this);
-        Map<Long, List<WALEdit>> commitedTransactionsById = recoveryManager.getCommitsFromLog(oldLogFile, minSeqId,
-            reporter);
+        Map<Long, WALEdit> commitedTransactionsById = recoveryManager.getCommitsFromLog(oldLogFile, minSeqId, reporter);
 
         if (commitedTransactionsById != null && commitedTransactionsById.size() > 0) {
             LOG.debug("found " + commitedTransactionsById.size() + " COMMITED transactions to recover.");
 
-            for (Entry<Long, List<WALEdit>> entry : commitedTransactionsById.entrySet()) {
+            for (Entry<Long, WALEdit> entry : commitedTransactionsById.entrySet()) {
                 LOG.debug("Writing " + entry.getValue().size() + " updates for transaction " + entry.getKey());
-                for (WALEdit b : entry.getValue()) {
-                    Put put = null;
-                    for (KeyValue kv : b.getKeyValues()) {
-                        if (put == null) put = new Put(kv.getRow());
+                WALEdit b = entry.getValue();
+
+                for (KeyValue kv : b.getKeyValues()) {
+                    // FIXME need to convert these into puts and deletes. Not sure this is the write way.
+                    // Could probably combine multiple KV's into single put/delete.
+                    // Also timestamps?
+                    if (kv.getType() == KeyValue.Type.Put.getCode()) {
+                        Put put = new Put();
                         put.add(kv);
+                        super.put(put);
+                    } else if (kv.isDelete()) {
+                        Delete del = new Delete(kv.getRow());
+                        if (kv.isDeleteFamily()) {
+                            del.deleteFamily(kv.getFamily());
+                        } else if (kv.isDeleteType()) {
+                            del.deleteColumn(kv.getFamily(), kv.getQualifier());
+                        }
                     }
-                    super.put(put, true); // These are walled so they live forever
+
                 }
+
             }
 
             LOG.debug("Flushing cache"); // We must trigger a cache flush,
@@ -267,7 +279,6 @@ public class TransactionalRegion extends HRegion {
 
         TransactionState state = getTransactionState(transactionId);
         state.addWrite(put);
-        this.hlog.writeUpdateToLog(super.getRegionInfo(), transactionId, put);
     }
 
     /**
@@ -283,7 +294,6 @@ public class TransactionalRegion extends HRegion {
         TransactionState state = getTransactionState(transactionId);
         for (Put put : puts) {
             state.addWrite(put);
-            this.hlog.writeUpdateToLog(super.getRegionInfo(), transactionId, put);
         }
     }
 
@@ -298,7 +308,6 @@ public class TransactionalRegion extends HRegion {
         checkClosing();
         TransactionState state = getTransactionState(transactionId);
         state.addDelete(delete);
-        this.hlog.writeDeleteToLog(super.getRegionInfo(), transactionId, delete);
     }
 
     /**
@@ -332,6 +341,8 @@ public class TransactionalRegion extends HRegion {
                 commitPendingTransactions.add(state);
                 state.setSequenceNumber(nextSequenceId.getAndIncrement());
                 commitedTransactionsBySequenceNumber.put(state.getSequenceNumber(), state);
+                transactionLog.writeCommitResuestToLog(getRegionInfo(), state);
+
                 return TransactionalRegionInterface.COMMIT_OK;
             }
             // Otherwise we were read-only and commitable, so we can forget it.
@@ -398,7 +409,7 @@ public class TransactionalRegion extends HRegion {
     }
 
     /**
-     * Commit the transaction.
+     * Abort the transaction.
      * 
      * @param transactionId
      * @throws IOException
@@ -417,7 +428,7 @@ public class TransactionalRegion extends HRegion {
         state.setStatus(Status.ABORTED);
 
         if (state.hasWrite()) {
-            this.hlog.writeAbortToLog(super.getRegionInfo(), state.getTransactionId());
+            this.transactionLog.writeAbortToLog(super.getRegionInfo(), state.getTransactionId());
         }
 
         // Following removes needed if we have voted
@@ -442,10 +453,10 @@ public class TransactionalRegion extends HRegion {
             this.delete(delete, null, true);
         }
 
-        // Now the transaction lives in the WAL, we can write a commit to the log
-        // so we don't have to recover it.
+        // Now the transaction lives in the core WAL, we can write a commit to the log
+        // so we don't have to recover it from the transactional WAL.
         if (state.hasWrite()) {
-            this.hlog.writeCommitToLog(super.getRegionInfo(), state.getTransactionId());
+            this.transactionLog.writeCommitToLog(super.getRegionInfo(), state.getTransactionId());
         }
 
         state.setStatus(Status.COMMITED);

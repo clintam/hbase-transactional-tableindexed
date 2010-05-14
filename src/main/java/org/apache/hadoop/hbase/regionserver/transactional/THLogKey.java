@@ -16,18 +16,25 @@ import java.io.IOException;
 
 import org.apache.hadoop.hbase.regionserver.wal.HLogKey;
 
+/**
+ * The Keys for the transactional WAL. These are keyed on region/transactionID such that the value may contain multiple
+ * rows (unlike HLogKey).
+ */
 public class THLogKey extends HLogKey {
 
     /**
      * Type of Transactional op going into the HLot
      */
     public enum TrxOp {
-        /** A standard operation that is transactional. KV holds the op. */
-        OP((byte) 2),
-        /** A transaction was committed. */
-        COMMIT((byte) 3),
-        /** A transaction was aborted. */
-        ABORT((byte) 4);
+        /**
+         * A transaction was requested to be committed. The WAL edit will have all the edits from the transaction. The
+         * transaction is not committed at this time. Rather it need to hear back the final commit call.
+         */
+        COMMIT_REQUEST((byte) 1),
+        /** A transaction was committed. We should have a previous COMMIT_REQUEST entry in the log. */
+        COMMIT((byte) 2),
+        /** A transaction was aborted. We should have a previous COMMIT_REQUEST entry in the log. */
+        ABORT((byte) 3);
 
         private final byte opCode;
 
@@ -51,10 +58,6 @@ public class THLogKey extends HLogKey {
 
     public THLogKey() {
     // For Writable
-    }
-
-    public THLogKey(final byte[] regionName, final byte[] tablename, final long logSeqNum, final long now) {
-        super(regionName, tablename, logSeqNum, now);
     }
 
     public THLogKey(final byte[] regionName, final byte[] tablename, final long logSeqNum, final long now,

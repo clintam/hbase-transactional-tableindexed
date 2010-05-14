@@ -23,6 +23,9 @@ import org.apache.hadoop.hbase.client.Delete;
 import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.regionserver.wal.HLog;
 import org.apache.hadoop.hbase.regionserver.wal.LogRollListener;
+import org.apache.hadoop.hbase.regionserver.wal.SequenceFileLogReader;
+import org.apache.hadoop.hbase.regionserver.wal.SequenceFileLogWriter;
+import org.apache.hadoop.hbase.regionserver.wal.WALEdit;
 
 /**
  * Add support for transactional operations to the regionserver's write-ahead-log.
@@ -34,30 +37,75 @@ public class THLog extends HLog {
         super(fs, dir, oldLogDir, conf, listener);
     }
 
-    // @Override
-    // protected SequenceFile.Writer createWriter(Path path) throws IOException {
-    // return super.createWriter(path, THLogKey.class, WALEdit.class);
-    // }
-    //
-    // @Override
-    // protected HLogKey makeKey(byte[] regionName, byte[] tableName, long seqNum, long now) {
-    // return new THLogKey(regionName, tableName, seqNum, now);
-    // }
-
-    public void writeUpdateToLog(final HRegionInfo regionInfo, final long transactionId, final Put update)
-            throws IOException {
-        this.append(regionInfo, update, transactionId);
+    /**
+     * Get a writer for the WAL.
+     * 
+     * @param path
+     * @param conf
+     * @return A WAL writer. Close when done with it.
+     * @throws IOException
+     */
+    public static Writer createWriter(final FileSystem fs, final Path path, final Configuration conf) throws IOException {
+        try {
+            HLog.Writer writer = new SequenceFileLogWriter(THLogKey.class);
+            writer.init(fs, path, conf);
+            return writer;
+        } catch (Exception e) {
+            IOException ie = new IOException("cannot get log writer");
+            ie.initCause(e);
+            throw ie;
+        }
     }
 
-    public void writeDeleteToLog(final HRegionInfo regionInfo, final long transactionId, final Delete delete)
-            throws IOException {
-        this.append(regionInfo, delete, transactionId);
+    @Override
+    protected Writer createAWriter(final FileSystem fs, final Path path, final Configuration conf) throws IOException {
+        return createWriter(fs, path, conf);
     }
 
+    /**
+     * Get a reader for the WAL.
+     * 
+     * @param fs
+     * @param path
+     * @param conf
+     * @return A WAL reader. Close when done with it.
+     * @throws IOException
+     */
+    public static Reader getReader(final FileSystem fs, final Path path, final Configuration conf) throws IOException {
+        try {
+            HLog.Reader reader = new SequenceFileLogReader(THLogKey.class);
+            reader.init(fs, path, conf);
+            return reader;
+        } catch (Exception e) {
+            IOException ie = new IOException("cannot get log reader");
+            ie.initCause(e);
+            throw ie;
+        }
+    }
+
+    /**
+     * Write a transactional state to the log after we have decide that it can be committed. At this time we are still
+     * waiting for the final vote (from other regions), so the commit may not be processed.
+     */
+    public void writeCommitResuestToLog(final HRegionInfo regionInfo, final TransactionState transactionState)
+            throws IOException {
+        this.appendCommitRequest(regionInfo, System.currentTimeMillis(), transactionState);
+    }
+
+    /**
+     * @param regionInfo
+     * @param transactionId
+     * @throws IOException
+     */
     public void writeCommitToLog(final HRegionInfo regionInfo, final long transactionId) throws IOException {
         this.append(regionInfo, System.currentTimeMillis(), THLogKey.TrxOp.COMMIT, transactionId);
     }
 
+    /**
+     * @param regionInfo
+     * @param transactionId
+     * @throws IOException
+     */
     public void writeAbortToLog(final HRegionInfo regionInfo, final long transactionId) throws IOException {
         this.append(regionInfo, System.currentTimeMillis(), THLogKey.TrxOp.ABORT, transactionId);
     }
@@ -71,57 +119,43 @@ public class THLog extends HLog {
      * @param transactionId
      * @throws IOException
      */
-    public void append(final HRegionInfo regionInfo, final long now, final THLogKey.TrxOp txOp, final long transactionId)
+    private void append(final HRegionInfo regionInfo, final long now, final THLogKey.TrxOp txOp, final long transactionId)
             throws IOException {
-    // THLogKey key = new THLogKey(regionInfo.getRegionName(), regionInfo.getTableDesc().getName(), -1, now, txOp,
-    // transactionId);
-    // WALEdit e = new WALEdit();
-    // e.add(new KeyValue(new byte[0], 0, 0)); // Empty KeyValue
-    // super.append(regionInfo, e, now, regionInfo.isMetaRegion());
+        THLogKey key = new THLogKey(regionInfo.getRegionName(), regionInfo.getTableDesc().getName(), -1, now, txOp,
+                transactionId);
+        WALEdit e = new WALEdit();
+        e.add(new KeyValue(new byte[0], 0, 0)); // Empty KeyValue
+        super.append(regionInfo, key, e);
     }
 
     /**
-     * Write a transactional update to the log.
+     * Write a transactional state to the log for a commit request.
      * 
      * @param regionInfo
      * @param update
      * @param transactionId
      * @throws IOException
      */
-    public void append(final HRegionInfo regionInfo, final Put update, final long transactionId) throws IOException {
+    private void appendCommitRequest(final HRegionInfo regionInfo, final long now,
+            final TransactionState transactionState) throws IOException {
 
-    // long commitTime = System.currentTimeMillis();
-    //
-    // THLogKey key = new THLogKey(regionInfo.getRegionName(), regionInfo.getTableDesc().getName(), -1, commitTime,
-    // THLogKey.TrxOp.OP, transactionId);
-    //
-    // for (KeyValue value : convertToKeyValues(update)) {
-    // WALEdit e = new WALEdit();
-    // e.add(value);
-    // super.append(regionInfo, e, commitTime, regionInfo.isMetaRegion());
-    // }
-    }
+        THLogKey key = new THLogKey(regionInfo.getRegionName(), regionInfo.getTableDesc().getName(), -1, now,
+                THLogKey.TrxOp.COMMIT_REQUEST, transactionState.getTransactionId());
 
-    /**
-     * Write a transactional delete to the log.
-     * 
-     * @param regionInfo
-     * @param delete
-     * @param transactionId
-     * @throws IOException
-     */
-    public void append(final HRegionInfo regionInfo, final Delete delete, final long transactionId) throws IOException {
-    //
-    // long commitTime = System.currentTimeMillis();
-    //
-    // THLogKey key = new THLogKey(regionInfo.getRegionName(), regionInfo.getTableDesc().getName(), -1, commitTime,
-    // THLogKey.TrxOp.OP, transactionId);
-    //
-    // for (KeyValue value : convertToKeyValues(delete)) {
-    // WALEdit e = new WALEdit();
-    // e.add(value);
-    // super.append(regionInfo, e, commitTime, regionInfo.isMetaRegion());
-    // }
+        WALEdit e = new WALEdit();
+
+        for (Put put : transactionState.getPuts()) {
+            for (KeyValue value : convertToKeyValues(put)) {
+                e.add(value);
+            }
+        }
+        for (Delete del : transactionState.getDeleteSet()) {
+            for (KeyValue value : convertToKeyValues(del)) {
+                e.add(value);
+            }
+        }
+        super.append(regionInfo, key, e);
+
     }
 
     private List<KeyValue> convertToKeyValues(final Put update) {

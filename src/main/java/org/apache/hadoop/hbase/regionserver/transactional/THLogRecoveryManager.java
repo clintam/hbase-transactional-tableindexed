@@ -12,11 +12,7 @@ package org.apache.hadoop.hbase.regionserver.transactional;
 
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.SortedMap;
 import java.util.TreeMap;
 import java.util.Map.Entry;
@@ -27,12 +23,12 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.hbase.HBaseConfiguration;
 import org.apache.hadoop.hbase.HRegionInfo;
 import org.apache.hadoop.hbase.client.transactional.HBaseBackedTransactionLogger;
 import org.apache.hadoop.hbase.client.transactional.TransactionLogger;
+import org.apache.hadoop.hbase.regionserver.wal.HLog;
 import org.apache.hadoop.hbase.regionserver.wal.WALEdit;
-import org.apache.hadoop.io.SequenceFile;
+import org.apache.hadoop.hbase.regionserver.wal.HLog.Reader;
 import org.apache.hadoop.util.Progressable;
 
 /**
@@ -56,7 +52,7 @@ class THLogRecoveryManager {
     }
 
     // For Testing
-    THLogRecoveryManager(final FileSystem fileSystem, final HRegionInfo regionInfo, final HBaseConfiguration conf) {
+    THLogRecoveryManager(final FileSystem fileSystem, final HRegionInfo regionInfo, final Configuration conf) {
         this.fileSystem = fileSystem;
         this.regionInfo = regionInfo;
         this.conf = conf;
@@ -69,11 +65,11 @@ class THLogRecoveryManager {
      * @param reconstructionLog
      * @param minSeqID that needs to be examined
      * @param reporter
-     * @return map of batch updates
+     * @return map of transaction that should be commited
      * @throws UnsupportedEncodingException
      * @throws IOException
      */
-    public Map<Long, List<WALEdit>> getCommitsFromLog(final Path reconstructionLog, final long minSeqID,
+    public Map<Long, WALEdit> getCommitsFromLog(final Path reconstructionLog, final long minSeqID,
             final Progressable reporter) throws UnsupportedEncodingException, IOException {
         if (reconstructionLog == null || !fileSystem.exists(reconstructionLog)) {
             // Nothing to do.
@@ -86,87 +82,72 @@ class THLogRecoveryManager {
             return null;
         }
 
-        SortedMap<Long, List<WALEdit>> pendingTransactionsById = new TreeMap<Long, List<WALEdit>>();
-        Set<Long> commitedTransactions = new HashSet<Long>();
-        Set<Long> abortedTransactions = new HashSet<Long>();
+        SortedMap<Long, WALEdit> pendingTransactionsById = new TreeMap<Long, WALEdit>();
 
-        SequenceFile.Reader logReader = new SequenceFile.Reader(fileSystem, reconstructionLog, conf);
+        // FIXME need to setup for trxLog keys?
+        Reader logReader = THLog.getReader(fileSystem, reconstructionLog, conf);
 
         try {
-            THLogKey key = new THLogKey();
-            WALEdit val = new WALEdit();
             long skippedEdits = 0;
             long totalEdits = 0;
-            long startCount = 0;
-            long writeCount = 0;
+            long commitRequestCount = 0;
             long abortCount = 0;
             long commitCount = 0;
             // How many edits to apply before we send a progress report.
-
             int reportInterval = conf.getInt("hbase.hstore.report.interval.edits", 2000);
-
-            // FIXME
-            while (true) { // logReader.next(key, val)) {
+            HLog.Entry entry;
+            // TBD: Need to add an exception handler around logReader.next.
+            //
+            // A transaction now appears as a single edit. If logReader.next()
+            // returns an exception, then it must be a incomplete/partial
+            // transaction at the end of the file. Rather than bubble up
+            // the exception, we should catch it and simply ignore the
+            // partial transaction during this recovery phase.
+            //
+            while ((entry = logReader.next()) != null) {
+                THLogKey key = (THLogKey) entry.getKey();
+                WALEdit val = entry.getEdit();
                 if (LOG.isTraceEnabled()) {
                     LOG.trace("Processing edit: key: " + key.toString() + " val: " + val.toString());
-                    break; // FIXME
                 }
-                // if (key.getLogSeqNum() < minSeqID) {
-                // skippedEdits++;
-                // continue;
-                // }
-                //
-                // if (key.getTrxOp() == null || !Bytes.equals(key.getRegionName(), regionInfo.getRegionName())) {
-                // continue;
-                // }
-                long transactionId = key.getTransactionId();
+                if (key.getLogSeqNum() < minSeqID) {
+                    skippedEdits++;
+                    continue;
+                }
 
-                List<WALEdit> updates = pendingTransactionsById.get(transactionId);
+                long transactionId = key.getTransactionId();
                 switch (key.getTrxOp()) {
 
-                    case OP:
-                        if (updates == null) {
-                            updates = new ArrayList<WALEdit>();
-                            pendingTransactionsById.put(transactionId, updates);
-                            startCount++;
+                    case COMMIT_REQUEST:
+                        if (pendingTransactionsById.containsKey(transactionId)) {
+                            LOG.error("Processing commit request for transaction: " + transactionId
+                                    + ", already have a pending trx with that id");
+                            throw new IOException("Corrupted transaction log");
                         }
-
-                        updates.add(val);
-                        val = new WALEdit();
-                        writeCount++;
+                        pendingTransactionsById.put(transactionId, val);
+                        commitRequestCount++;
                         break;
 
                     case ABORT:
-                        if (updates == null) {
+                        if (!pendingTransactionsById.containsKey(transactionId)) {
                             LOG.error("Processing abort for transaction: " + transactionId
-                                    + ", but have not seen start message");
+                                    + ", but don't have  a pending trx with that id");
                             throw new IOException("Corrupted transaction log");
                         }
-                        abortedTransactions.add(transactionId);
                         pendingTransactionsById.remove(transactionId);
                         abortCount++;
                         break;
 
                     case COMMIT:
-                        if (updates == null) {
+                        if (!pendingTransactionsById.containsKey(transactionId)) {
                             LOG.error("Processing commit for transaction: " + transactionId
-                                    + ", but have not seen start message");
-                            throw new IOException("Corrupted transaction log");
-                        }
-                        if (abortedTransactions.contains(transactionId)) {
-                            LOG.error("Processing commit for transaction: " + transactionId
-                                    + ", but also have abort message");
-                            throw new IOException("Corrupted transaction log");
-                        }
-                        if (commitedTransactions.contains(transactionId)) {
-                            LOG.error("Processing commit for transaction: " + transactionId
-                                    + ", but have already commited transaction with that id");
+                                    + ", but don't have  a pending trx with that id");
                             throw new IOException("Corrupted transaction log");
                         }
                         pendingTransactionsById.remove(transactionId);
-                        commitedTransactions.add(transactionId);
                         commitCount++;
                         break;
+
                     default:
                         throw new IllegalStateException("Unexpected log entry type");
                 }
@@ -178,8 +159,8 @@ class THLogRecoveryManager {
             }
             if (LOG.isDebugEnabled()) {
                 LOG.debug("Read " + totalEdits + " tranasctional operations (skipped " + skippedEdits
-                        + " because sequence id <= " + minSeqID + "): " + startCount + " starts, " + writeCount
-                        + " writes, " + abortCount + " aborts, and " + commitCount + " commits.");
+                        + " because sequence id <= " + minSeqID + "): " + commitRequestCount + " commitRequests, "
+                        + abortCount + " aborts, and " + commitCount + " commits.");
             }
         } finally {
             logReader.close();
@@ -192,17 +173,15 @@ class THLogRecoveryManager {
         return null;
     }
 
-    private SortedMap<Long, List<WALEdit>> resolvePendingTransaction(
-            final SortedMap<Long, List<WALEdit>> pendingTransactionsById) throws IOException {
-        SortedMap<Long, List<WALEdit>> commitedTransactionsById = new TreeMap<Long, List<WALEdit>>();
+    private SortedMap<Long, WALEdit> resolvePendingTransaction(final SortedMap<Long, WALEdit> pendingTransactionsById)
+            throws IOException {
+
+        SortedMap<Long, WALEdit> commitedTransactionsById = new TreeMap<Long, WALEdit>();
 
         LOG.info("Region log has " + pendingTransactionsById.size()
                 + " unfinished transactions. Going to the transaction log to resolve");
 
-        for (Entry<Long, List<WALEdit>> entry : pendingTransactionsById.entrySet()) {
-            if (entry.getValue().isEmpty()) {
-                LOG.debug("Skipping resolving trx [" + entry.getKey() + "] has no writes.");
-            }
+        for (Entry<Long, WALEdit> entry : pendingTransactionsById.entrySet()) {
             TransactionLogger.TransactionStatus transactionStatus;
             transactionStatus = getGlobalTransactionLog().getStatusForTransaction(entry.getKey());
 
@@ -217,6 +196,7 @@ class THLogRecoveryManager {
                     break;
                 case PENDING:
                     LOG.warn("Transaction [" + entry.getKey() + "] is still pending. Asumming it will not commit.");
+                    // FIXME / REVIEW validate this behavior/assumption
                     // Can safely ignore this because if we don't see a commit or abort in the regions WAL, the we must
                     // not have been
                     // asked to vote yet.
@@ -237,5 +217,14 @@ class THLogRecoveryManager {
             }
         }
         return globalTransactionLog;
+    }
+
+    /**
+     * Set globalTransactionLog.
+     * 
+     * @param globalTransactionLog
+     */
+    public void setGlobalTransactionLog(final TransactionLogger globalTransactionLog) {
+        this.globalTransactionLog = globalTransactionLog;
     }
 }
