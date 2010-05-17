@@ -112,10 +112,12 @@ public class TransactionalRegion extends HRegion {
         this.transactionLeases = transactionalLeases;
     }
 
-    // TODO, plug this into the process somehow...
-    private void doTrxReconstructionLog(final Path oldLogFile, final long minSeqId, final long maxSeqId,
+    @Override
+    protected void doReconstructionLog(final Path oldCoreLogFile, final long minSeqId, final long maxSeqId,
             final Progressable reporter) throws UnsupportedEncodingException, IOException {
-        super.doReconstructionLog(oldLogFile, minSeqId, maxSeqId, reporter);
+        super.doReconstructionLog(oldCoreLogFile, minSeqId, maxSeqId, reporter);
+
+        Path trxPath = new Path(oldCoreLogFile.getParent(), THLog.HREGION_OLD_THLOGFILE_NAME);
 
         // We can ignore doing anything with the Trx Log table, it is not-transactional.
         if (super.getTableDesc().getNameAsString().equals(HBaseBackedTransactionLogger.TABLE_NAME)) {
@@ -123,7 +125,7 @@ public class TransactionalRegion extends HRegion {
         }
 
         THLogRecoveryManager recoveryManager = new THLogRecoveryManager(this);
-        Map<Long, WALEdit> commitedTransactionsById = recoveryManager.getCommitsFromLog(oldLogFile, minSeqId, reporter);
+        Map<Long, WALEdit> commitedTransactionsById = recoveryManager.getCommitsFromLog(trxPath, minSeqId, reporter);
 
         if (commitedTransactionsById != null && commitedTransactionsById.size() > 0) {
             LOG.debug("found " + commitedTransactionsById.size() + " COMMITED transactions to recover.");
@@ -453,7 +455,7 @@ public class TransactionalRegion extends HRegion {
             this.delete(delete, null, true);
         }
 
-        // Now the transaction lives in the core WAL, we can write a commit to the log
+        // Now the transactional writes live in the core WAL, we can write a commit to the log
         // so we don't have to recover it from the transactional WAL.
         if (state.hasWrite()) {
             this.transactionLog.writeCommitToLog(super.getRegionInfo(), state.getTransactionId());

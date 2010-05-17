@@ -32,9 +32,14 @@ import org.apache.hadoop.hbase.regionserver.wal.WALEdit;
  */
 public class THLog extends HLog {
 
+    static final String THLOG_DATFILE = "thlog.dat.";
+
+    /** Name of old log file for reconstruction */
+    static final String HREGION_OLD_THLOGFILE_NAME = "oldthlogfile.log";
+
     public THLog(final FileSystem fs, final Path dir, final Path oldLogDir, final Configuration conf,
             final LogRollListener listener) throws IOException {
-        super(fs, dir, oldLogDir, conf, listener);
+        super(fs, dir, oldLogDir, conf, listener, false);
     }
 
     /**
@@ -60,6 +65,18 @@ public class THLog extends HLog {
     @Override
     protected Writer createAWriter(final FileSystem fs, final Path path, final Configuration conf) throws IOException {
         return createWriter(fs, path, conf);
+    }
+
+    /**
+     * This is a convenience method that computes a new filename with a given file-number.
+     * 
+     * @param fn
+     * @return Path
+     */
+    @Override
+    public Path computeFilename(final long fn) {
+        if (fn < 0) return null;
+        return new Path(getDir(), THLOG_DATFILE + fn);
     }
 
     /**

@@ -116,9 +116,6 @@ public class TestTHLog {
         state.addWrite(new Put(row1).add(family, column, val3));
         log.writeCommitResuestToLog(regionInfo, state);
         log.writeAbortToLog(regionInfo, transactionId);
-
-        // log.completeCacheFlush(regionName, tableName, logSeqId);
-
         log.close();
         Path filename = log.computeFilename(log.getFilenum());
         THLogRecoveryManager logRecoveryMangaer = new THLogRecoveryManager(fs, regionInfo, TEST_UTIL.getConfiguration());
@@ -127,7 +124,7 @@ public class TestTHLog {
     }
 
     @Test
-    public void testWithPendingTransaction() throws IOException {
+    public void testWithPendingTransactionToCommit() throws IOException {
         THLog log = new THLog(fs, dir, oldDir, TEST_UTIL.getConfiguration(), null);
 
         // Write columns named 1, 2, 3, etc. and then values of single byte
@@ -138,9 +135,6 @@ public class TestTHLog {
         state.addWrite(new Put(row1).add(family, column, val2));
         state.addWrite(new Put(row1).add(family, column, val3));
         log.writeCommitResuestToLog(regionInfo, state);
-
-        // log.completeCacheFlush(regionName, tableName, logSeqId);
-
         log.close();
         Path filename = log.computeFilename(log.getFilenum());
         THLogRecoveryManager logRecoveryMangaer = new THLogRecoveryManager(fs, regionInfo, TEST_UTIL.getConfiguration());
@@ -148,15 +142,11 @@ public class TestTHLog {
 
             @Override
             public long createNewTransactionLog() {
-                // TODO Auto-generated method stub
                 return 0;
             }
 
             @Override
-            public void forgetTransaction(final long transactionId) {
-            // TODO Auto-generated method stub
-
-            }
+            public void forgetTransaction(final long transactionId) {}
 
             @Override
             public TransactionStatus getStatusForTransaction(final long transactionId) throws IOException {
@@ -164,114 +154,48 @@ public class TestTHLog {
             }
 
             @Override
-            public void setStatusForTransaction(final long transactionId, final TransactionStatus status) {
-            // TODO Auto-generated method stub
-
-            }
+            public void setStatusForTransaction(final long transactionId, final TransactionStatus status) {}
 
         });
         Map<Long, WALEdit> commits = logRecoveryMangaer.getCommitsFromLog(filename, -1, null);
-        Assert.assertNotNull(commits);
+        Assert.assertEquals(1, commits.size());
+        Assert.assertEquals(3, commits.values().iterator().next().getKeyValues().size());
     }
 
-    // /**
-    // * @throws IOException
-    // */
-    // public void testInterlievedCommits() throws IOException {
-    //
-    // THLog log = new THLog(fs, dir, null, this.conf, null);
-    // THLogRecoveryManager logMangaer = new THLogRecoveryManager(fs, regionInfo, conf);
-    //
-    // long transaction1Id = 1;
-    // long transaction2Id = 2;
-    //
-    // log.writeUpdateToLog(regionInfo, transaction1Id, new Put(row1).add(family, column, val1));
-    //
-    // log.writeUpdateToLog(regionInfo, transaction2Id, new Put(row2).add(family, column, val2));
-    //
-    // log.writeUpdateToLog(regionInfo, transaction1Id, new Put(row3).add(family, column, val3));
-    //
-    // log.writeCommitToLog(regionInfo, transaction1Id);
-    // log.writeCommitToLog(regionInfo, transaction2Id);
-    //
-    // // log.completeCacheFlush(regionName, tableName, logSeqId);
-    //
-    // log.close();
-    // Path filename = log.computeFilename(log.getFilenum());
-    //
-    // Map<Long, List<WALEdit>> commits = logMangaer.getCommitsFromLog(filename, -1, null);
-    //
-    // assertNull(commits);
-    // }
-    //
-    // /**
-    // * @throws IOException
-    // */
-    // public void testInterlievedAbortCommit() throws IOException {
-    //
-    // THLog log = new THLog(fs, dir, null, this.conf, null);
-    // THLogRecoveryManager logMangaer = new THLogRecoveryManager(fs, regionInfo, conf);
-    //
-    // long transaction1Id = 1;
-    // long transaction2Id = 2;
-    //
-    // log.writeUpdateToLog(regionInfo, transaction1Id, new Put(row1).add(family, column, val1));
-    //
-    // log.writeUpdateToLog(regionInfo, transaction2Id, new Put(row2).add(family, column, val2));
-    // log.writeAbortToLog(regionInfo, transaction2Id);
-    //
-    // log.writeUpdateToLog(regionInfo, transaction1Id, new Put(row3).add(family, column, val3));
-    //
-    // log.writeCommitToLog(regionInfo, transaction1Id);
-    //
-    // // log.completeCacheFlush(regionName, tableName, logSeqId);
-    //
-    // log.close();
-    // Path filename = log.computeFilename(log.getFilenum());
-    //
-    // Map<Long, List<WALEdit>> commits = logMangaer.getCommitsFromLog(filename, -1, null);
-    //
-    // assertNull(commits);
-    // }
-    //
-    // /**
-    // * @throws IOException
-    // */
-    // public void testInterlievedCommitAbort() throws IOException {
-    //
-    // THLog log = new THLog(fs, dir, null, this.conf, null);
-    // THLogRecoveryManager logMangaer = new THLogRecoveryManager(fs, regionInfo, conf);
-    //
-    // long transaction1Id = 1;
-    // long transaction2Id = 2;
-    //
-    // log.writeUpdateToLog(regionInfo, transaction1Id, new Put(row1).add(family, column, val1));
-    //
-    // log.writeUpdateToLog(regionInfo, transaction2Id, new Put(row2).add(family, column, val2));
-    // log.writeCommitToLog(regionInfo, transaction2Id);
-    //
-    // log.writeUpdateToLog(regionInfo, transaction1Id, new Put(row3).add(family, column, val3));
-    //
-    // log.writeAbortToLog(regionInfo, transaction1Id);
-    //
-    // // log.completeCacheFlush(regionName, tableName, logSeqId);
-    //
-    // log.close();
-    // Path filename = log.computeFilename(log.getFilenum());
-    //
-    // Map<Long, List<WALEdit>> commits = logMangaer.getCommitsFromLog(filename, -1, null);
-    //
-    // assertNull(commits);
-    // }
+    @Test
+    public void testWithPendingTransactionToAbort() throws IOException {
+        THLog log = new THLog(fs, dir, oldDir, TEST_UTIL.getConfiguration(), null);
 
-    // FIXME Cannot do this test without a global transacton manager
-    // public void testMissingCommit() {
-    // fail();
-    // }
+        // Write columns named 1, 2, 3, etc. and then values of single byte
+        // 1, 2, 3...
+        long transactionId = 1;
+        TransactionState state = new TransactionState(transactionId, 0, regionInfo);
+        state.addWrite(new Put(row1).add(family, column, val1));
+        state.addWrite(new Put(row1).add(family, column, val2));
+        state.addWrite(new Put(row1).add(family, column, val3));
+        log.writeCommitResuestToLog(regionInfo, state);
+        log.close();
+        Path filename = log.computeFilename(log.getFilenum());
+        THLogRecoveryManager logRecoveryMangaer = new THLogRecoveryManager(fs, regionInfo, TEST_UTIL.getConfiguration());
+        logRecoveryMangaer.setGlobalTransactionLog(new TransactionLogger() {
 
-    // FIXME Cannot do this test without a global transacton manager
-    // public void testMissingAbort() {
-    // fail();
-    // }
+            @Override
+            public long createNewTransactionLog() {
+                return 0;
+            }
 
+            @Override
+            public void forgetTransaction(final long transactionId) {}
+
+            @Override
+            public TransactionStatus getStatusForTransaction(final long transactionId) throws IOException {
+                return TransactionStatus.ABORTED;
+            }
+
+            @Override
+            public void setStatusForTransaction(final long transactionId, final TransactionStatus status) {}
+        });
+        Map<Long, WALEdit> commits = logRecoveryMangaer.getCommitsFromLog(filename, -1, null);
+        Assert.assertEquals(0, commits.size());
+    }
 }

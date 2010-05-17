@@ -79,11 +79,7 @@ public class TransactionalRegionServer extends HRegionServer implements Transact
     @Override
     protected void init(final MapWritable c) throws IOException {
         super.init(c);
-        Path oldLogDir = new Path(getRootDir(), HREGION_OLDLOGDIR_NAME + "-trx");
-        Path logdir = new Path(getRootDir(), HLog.getHLogDirectoryName(this.serverInfo) + "-trx");
-
-        trxHLog = new THLog(getFileSystem(), logdir, oldLogDir, conf, null);
-
+        initializeTHLog();
         String n = Thread.currentThread().getName();
         UncaughtExceptionHandler handler = new UncaughtExceptionHandler() {
 
@@ -95,6 +91,14 @@ public class TransactionalRegionServer extends HRegionServer implements Transact
         Threads.setDaemonThreadRunning(this.cleanOldTransactionsThread, n + ".oldTransactionCleaner", handler);
         Threads.setDaemonThreadRunning(this.transactionLeases, "Transactional leases");
 
+    }
+
+    private void initializeTHLog() throws IOException {
+        // We keep in the same directory as the core HLog.
+        Path oldLogDir = new Path(getRootDir(), HREGION_OLDLOGDIR_NAME);
+        Path logdir = new Path(getRootDir(), HLog.getHLogDirectoryName(this.serverInfo));
+
+        trxHLog = new THLog(getFileSystem(), logdir, oldLogDir, conf, null);
     }
 
     @Override
