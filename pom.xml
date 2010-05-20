@@ -18,14 +18,14 @@
 	<dependencies>
 		<dependency>
 			<groupId>org.apache.hbase</groupId>
-			<artifactId>hbase-core</artifactId>
+			<artifactId>hbase</artifactId>
 			<version>${hbase.version}</version>
 		</dependency>
 		
 		<!--  Test dependencies -->
 		<dependency>
 	        <groupId>org.apache.hbase</groupId>
-	        <artifactId>hbase-core</artifactId>
+	        <artifactId>hbase</artifactId>
 			<version>${hbase.version}</version>
 	        <classifier>tests</classifier>
 	        <scope>test</scope>

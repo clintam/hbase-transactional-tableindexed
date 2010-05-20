@@ -39,7 +39,7 @@ public class THLog extends HLog {
 
     public THLog(final FileSystem fs, final Path dir, final Path oldLogDir, final Configuration conf,
             final LogRollListener listener) throws IOException {
-        super(fs, dir, oldLogDir, conf, listener, false);
+        super(fs, dir, oldLogDir, conf, listener, null, false);
     }
 
     /**
