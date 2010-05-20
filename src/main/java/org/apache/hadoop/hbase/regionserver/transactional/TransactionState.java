@@ -378,10 +378,12 @@ class TransactionState {
         List<KeyValue> kvList = new ArrayList<KeyValue>();
 
         for (Put put : puts) {
-            if (scan.getStartRow() != null && Bytes.compareTo(put.getRow(), scan.getStartRow()) < 0) {
+            if (scan.getStartRow() != null && !Bytes.equals(scan.getStartRow(), HConstants.EMPTY_START_ROW)
+                    && Bytes.compareTo(put.getRow(), scan.getStartRow()) < 0) {
                 continue;
             }
-            if (scan.getStopRow() != null && Bytes.compareTo(put.getRow(), scan.getStopRow()) >= 0) {
+            if (scan.getStopRow() != null && !Bytes.equals(scan.getStopRow(), HConstants.EMPTY_END_ROW)
+                    && Bytes.compareTo(put.getRow(), scan.getStopRow()) >= 0) {
                 continue;
             }
 
