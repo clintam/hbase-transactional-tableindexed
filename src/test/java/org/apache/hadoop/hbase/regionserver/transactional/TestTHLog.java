@@ -97,7 +97,7 @@ public class TestTHLog {
         // log.completeCacheFlush(regionName, tableName, logSeqId);
 
         log.close();
-        Path filename = log.computeFilename(log.getFilenum());
+        Path filename = log.computeFilename();
         THLogRecoveryManager logRecoveryMangaer = new THLogRecoveryManager(fs, regionInfo, TEST_UTIL.getConfiguration());
         Map<Long, WALEdit> commits = logRecoveryMangaer.getCommitsFromLog(filename, -1, null);
         Assert.assertNull(commits);
@@ -117,7 +117,7 @@ public class TestTHLog {
         log.writeCommitResuestToLog(regionInfo, state);
         log.writeAbortToLog(regionInfo, transactionId);
         log.close();
-        Path filename = log.computeFilename(log.getFilenum());
+        Path filename = log.computeFilename();
         THLogRecoveryManager logRecoveryMangaer = new THLogRecoveryManager(fs, regionInfo, TEST_UTIL.getConfiguration());
         Map<Long, WALEdit> commits = logRecoveryMangaer.getCommitsFromLog(filename, -1, null);
         Assert.assertNull(commits);
@@ -136,7 +136,7 @@ public class TestTHLog {
         state.addWrite(new Put(row1).add(family, column, val3));
         log.writeCommitResuestToLog(regionInfo, state);
         log.close();
-        Path filename = log.computeFilename(log.getFilenum());
+        Path filename = log.computeFilename();
         THLogRecoveryManager logRecoveryMangaer = new THLogRecoveryManager(fs, regionInfo, TEST_UTIL.getConfiguration());
         logRecoveryMangaer.setGlobalTransactionLog(new TransactionLogger() {
 
@@ -175,7 +175,7 @@ public class TestTHLog {
         state.addWrite(new Put(row1).add(family, column, val3));
         log.writeCommitResuestToLog(regionInfo, state);
         log.close();
-        Path filename = log.computeFilename(log.getFilenum());
+        Path filename = log.computeFilename();
         THLogRecoveryManager logRecoveryMangaer = new THLogRecoveryManager(fs, regionInfo, TEST_UTIL.getConfiguration());
         logRecoveryMangaer.setGlobalTransactionLog(new TransactionLogger() {
 

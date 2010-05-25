@@ -39,7 +39,7 @@ public class THLog extends HLog {
 
     public THLog(final FileSystem fs, final Path dir, final Path oldLogDir, final Configuration conf,
             final LogRollListener listener) throws IOException {
-        super(fs, dir, oldLogDir, conf, listener, null, false);
+        super(fs, dir, oldLogDir, conf, listener, null, false, null);
     }
 
     /**
@@ -74,9 +74,9 @@ public class THLog extends HLog {
      * @return Path
      */
     @Override
-    public Path computeFilename(final long fn) {
-        if (fn < 0) return null;
-        return new Path(getDir(), THLOG_DATFILE + fn);
+    protected Path computeFilename() {
+        // REVIEW : Use prefix ?
+        return new Path(getDir(), THLOG_DATFILE + getFilenum());
     }
 
     /**
