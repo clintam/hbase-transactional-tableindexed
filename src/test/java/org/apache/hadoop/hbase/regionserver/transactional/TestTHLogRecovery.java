@@ -41,6 +41,7 @@ import org.apache.hadoop.hbase.regionserver.HRegionServer;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.hbase.util.JVMClusterUtil;
 import org.apache.hadoop.util.ReflectionUtils;
+import org.junit.AfterClass;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -92,6 +93,11 @@ public class TestTHLogRecovery {
         HBaseAdmin admin = new HBaseAdmin(conf);
         admin.createTable(desc);
         HBaseBackedTransactionLogger.createTable();
+    }
+
+    @AfterClass
+    public static void tearDownClass() throws Throwable {
+        TEST_UTIL.shutdownMiniCluster();
     }
 
     @Before
