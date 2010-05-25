@@ -11,7 +11,6 @@
 package org.apache.hadoop.hbase.client.transactional;
 
 import java.io.IOException;
-import java.util.Iterator;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -71,9 +70,9 @@ public class TransactionManager {
     public int prepareCommit(final TransactionState transactionState) throws CommitUnsuccessfulException, IOException {
         boolean allReadOnly = true;
         try {
-            Iterator<HRegionLocation> locationIterator = transactionState.getParticipatingRegions().iterator();
-            while (locationIterator.hasNext()) {
-                HRegionLocation location = locationIterator.next();
+
+            for (HRegionLocation location : transactionState.getParticipatingRegions()) {
+
                 TransactionalRegionInterface transactionalRegionServer = (TransactionalRegionInterface) connection
                         .getHRegionConnection(location.getServerAddress());
                 int commitStatus = transactionalRegionServer.commitRequest(location.getRegionInfo().getRegionName(),
@@ -84,10 +83,11 @@ public class TransactionManager {
                         allReadOnly = false;
                         break;
                     case TransactionalRegionInterface.COMMIT_OK_READ_ONLY:
-                        locationIterator.remove(); // No need to doCommit for read-onlys
+                        transactionState.addRegionToIgnore(location); // No need to doCommit for read-onlys
                         break;
                     case TransactionalRegionInterface.COMMIT_UNSUCESSFUL:
                         canCommit = false;
+                        transactionState.addRegionToIgnore(location); // No need to re-abort.
                         break;
                     default:
                         throw new CommitUnsuccessfulException("Unexpected return code from prepareCommit: "
@@ -102,8 +102,8 @@ public class TransactionManager {
 
                 if (!canCommit) {
                     LOG.debug("Aborting [" + transactionState.getTransactionId() + "]");
-                    abort(transactionState, location);
-                    throw new CommitUnsuccessfulException();
+                    abort(transactionState);
+                    return TransactionalRegionInterface.COMMIT_UNSUCESSFUL;
                 }
             }
         } catch (Exception e) {
@@ -128,15 +128,18 @@ public class TransactionManager {
      */
     public void tryCommit(final TransactionState transactionState) throws CommitUnsuccessfulException, IOException {
         long startTime = System.currentTimeMillis();
-        LOG.debug("atempting to commit trasaction: " + transactionState.toString());
+        LOG.trace("atempting to commit trasaction: " + transactionState.toString());
         int status = prepareCommit(transactionState);
 
         if (status == TransactionalRegionInterface.COMMIT_OK) {
             doCommit(transactionState);
         } else if (status == TransactionalRegionInterface.COMMIT_OK_READ_ONLY) {
             transactionLogger.forgetTransaction(transactionState.getTransactionId());
+        } else if (status == TransactionalRegionInterface.COMMIT_UNSUCESSFUL) {
+            // We have already aborted at this point
+            throw new CommitUnsuccessfulException();
         }
-        LOG.debug("Committed transaction [" + transactionState.getTransactionId() + "] in ["
+        LOG.trace("Committed transaction [" + transactionState.getTransactionId() + "] in ["
                 + ((System.currentTimeMillis() - startTime)) + "]ms");
     }
 
@@ -148,19 +151,22 @@ public class TransactionManager {
      */
     public void doCommit(final TransactionState transactionState) throws CommitUnsuccessfulException {
         try {
-            LOG.debug("Commiting [" + transactionState.getTransactionId() + "]");
+            LOG.trace("Commiting [" + transactionState.getTransactionId() + "]");
 
             transactionLogger.setStatusForTransaction(transactionState.getTransactionId(),
                 TransactionLogger.TransactionStatus.COMMITTED);
 
             for (HRegionLocation location : transactionState.getParticipatingRegions()) {
+                if (transactionState.getRegionsToIngore().contains(location)) {
+                    continue;
+                }
                 TransactionalRegionInterface transactionalRegionServer = (TransactionalRegionInterface) connection
                         .getHRegionConnection(location.getServerAddress());
                 transactionalRegionServer.commit(location.getRegionInfo().getRegionName(), transactionState
                         .getTransactionId());
             }
         } catch (Exception e) {
-            LOG.debug("Commit of transaction [" + transactionState.getTransactionId() + "] was unsucsessful", e);
+            LOG.info("Commit of transaction [" + transactionState.getTransactionId() + "] was unsucsessful", e);
             // This happens on a NSRE that is triggered by a split
             try {
                 abort(transactionState);
@@ -179,16 +185,11 @@ public class TransactionManager {
      * @throws IOException
      */
     public void abort(final TransactionState transactionState) throws IOException {
-        abort(transactionState, null);
-    }
-
-    private void abort(final TransactionState transactionState, final HRegionLocation locationToIgnore)
-            throws IOException {
         transactionLogger.setStatusForTransaction(transactionState.getTransactionId(),
             TransactionLogger.TransactionStatus.ABORTED);
 
         for (HRegionLocation location : transactionState.getParticipatingRegions()) {
-            if (locationToIgnore != null && location.equals(locationToIgnore)) {
+            if (transactionState.getRegionsToIngore().contains(location)) {
                 continue;
             }
             try {
@@ -198,12 +199,12 @@ public class TransactionManager {
                 transactionalRegionServer.abort(location.getRegionInfo().getRegionName(), transactionState
                         .getTransactionId());
             } catch (UnknownTransactionException e) {
-                LOG.debug("Got unknown transaciton exception durring abort. Transaction: ["
+                LOG.info("Got unknown transaciton exception durring abort. Transaction: ["
                         + transactionState.getTransactionId() + "], region: ["
                         + location.getRegionInfo().getRegionNameAsString() + "]. Ignoring.");
             } catch (NotServingRegionException e) {
-                LOG.debug("Got NSRE durring abort. Transaction: [" + transactionState.getTransactionId()
-                        + "], region: [" + location.getRegionInfo().getRegionNameAsString() + "]. Ignoring.");
+                LOG.info("Got NSRE durring abort. Transaction: [" + transactionState.getTransactionId() + "], region: ["
+                        + location.getRegionInfo().getRegionNameAsString() + "]. Ignoring.");
             }
         }
         transactionLogger.forgetTransaction(transactionState.getTransactionId());

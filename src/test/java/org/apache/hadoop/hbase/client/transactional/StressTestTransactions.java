@@ -20,7 +20,8 @@ import junit.framework.Assert;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.apache.hadoop.hbase.HBaseClusterTestCase;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.hbase.HBaseTestingUtility;
 import org.apache.hadoop.hbase.HColumnDescriptor;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.HTableDescriptor;
@@ -30,6 +31,10 @@ import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.ipc.TransactionalRegionInterface;
 import org.apache.hadoop.hbase.regionserver.transactional.TransactionalRegionServer;
 import org.apache.hadoop.hbase.util.Bytes;
+import org.junit.AfterClass;
+import org.junit.Before;
+import org.junit.BeforeClass;
+import org.junit.Test;
 
 /**
  * Stress Test the transaction functionality. This requires to run an {@link TransactionalRegionServer}. We run many
@@ -38,20 +43,21 @@ import org.apache.hadoop.hbase.util.Bytes;
  * modification operation which changes two values while maintaining the sum. Also each transaction type has a
  * consistency-check operation which sums all rows and verifies that the sum is as expected.
  */
-public class StressTestTransactions extends HBaseClusterTestCase {
+public class StressTestTransactions {
 
-    protected static final Log LOG = LogFactory.getLog(StressTestTransactions.class);
+    private static final Log LOG = LogFactory.getLog(StressTestTransactions.class);
+
+    private static final HBaseTestingUtility TEST_UTIL = new HBaseTestingUtility();
 
     private static final int NUM_TABLES = 3;
     private static final int NUM_ST_ROWS = 3;
     private static final int NUM_MT_ROWS = 3;
-    private static final int NUM_TRANSACTIONS_PER_THREAD = 100;
-    private static final int NUM_SINGLE_TABLE_THREADS = 6;
-    private static final int NUM_MULTI_TABLE_THREADS = 6;
+    private static final int NUM_TRANSACTIONS_PER_THREAD = 10000;
+    private static final int NUM_SINGLE_TABLE_THREADS = 10;
+    private static final int NUM_MULTI_TABLE_THREADS = 10;
     private static final int PRE_COMMIT_SLEEP = 10;
     protected static final Random RAND = new Random();
 
-    private static final byte[] FAMILY_COLON = Bytes.toBytes("family:");
     private static final byte[] FAMILY = Bytes.toBytes("family");
     private static final byte[] QUAL_A = Bytes.toBytes("a");
     static final byte[] COL = Bytes.toBytes("family:a");
@@ -60,21 +66,27 @@ public class StressTestTransactions extends HBaseClusterTestCase {
     protected TransactionalTable[] tables;
     protected TransactionManager transactionManager;
 
-    /** constructor */
-    public StressTestTransactions() {
+    @BeforeClass
+    public static void setUpClass() throws Throwable {
+        Configuration conf = TEST_UTIL.getConfiguration();
         conf.set(HConstants.REGION_SERVER_CLASS, TransactionalRegionInterface.class.getName());
         conf.set(HConstants.REGION_SERVER_IMPL, TransactionalRegionServer.class.getName());
+        TEST_UTIL.startMiniCluster(3);
     }
 
-    @Override
-    protected void setUp() throws Exception {
-        super.setUp();
+    @AfterClass
+    public static void tearDownClass() throws Throwable {
+        TEST_UTIL.shutdownMiniCluster();
+    }
 
+    @Before
+    public void setUp() throws Exception {
+        Configuration conf = TEST_UTIL.getConfiguration();
         tables = new TransactionalTable[NUM_TABLES];
 
         for (int i = 0; i < tables.length; i++) {
             HTableDescriptor desc = new HTableDescriptor(makeTableName(i));
-            desc.addFamily(new HColumnDescriptor(FAMILY_COLON));
+            desc.addFamily(new HColumnDescriptor(FAMILY));
             admin = new HBaseAdmin(conf);
             admin.createTable(desc);
             tables[i] = new TransactionalTable(conf, desc.getName());
@@ -138,6 +150,10 @@ public class StressTestTransactions extends HBaseClusterTestCase {
                     throw new RuntimeException(e);
                 } catch (CommitUnsuccessfulException e) {
                     numAborts++;
+                }
+
+                if (numRuns % 100 == 0) {
+                    LOG.info(getName() + " done with transaction " + numRuns + " of " + NUM_TRANSACTIONS_PER_THREAD);
                 }
             }
         }
@@ -215,10 +231,10 @@ public class StressTestTransactions extends HBaseClusterTestCase {
             byte[] row2 = makeSTRow(row2Index);
 
             TransactionState transactionState = transactionManager.beginTransaction();
-            int row1Amount = Bytes.toInt(table.get(transactionState, new Get(row1).addColumn(COL)).getValue(FAMILY,
-                QUAL_A));
-            int row2Amount = Bytes.toInt(table.get(transactionState, new Get(row2).addColumn(COL)).getValue(FAMILY,
-                QUAL_A));
+            int row1Amount = Bytes.toInt(table.get(transactionState, new Get(row1).addColumn(FAMILY, QUAL_A)).getValue(
+                FAMILY, QUAL_A));
+            int row2Amount = Bytes.toInt(table.get(transactionState, new Get(row2).addColumn(FAMILY, QUAL_A)).getValue(
+                FAMILY, QUAL_A));
 
             row1Amount -= transferAmount;
             row2Amount += transferAmount;
@@ -237,8 +253,8 @@ public class StressTestTransactions extends HBaseClusterTestCase {
             TransactionState transactionState = transactionManager.beginTransaction();
             int totalSum = 0;
             for (int i = 0; i < NUM_ST_ROWS; i++) {
-                totalSum += Bytes.toInt(table.get(transactionState, new Get(makeSTRow(i)).addColumn(COL)).getValue(
-                    FAMILY, QUAL_A));
+                totalSum += Bytes.toInt(table.get(transactionState, new Get(makeSTRow(i)).addColumn(FAMILY, QUAL_A))
+                        .getValue(FAMILY, QUAL_A));
             }
 
             transactionManager.tryCommit(transactionState);
@@ -287,10 +303,10 @@ public class StressTestTransactions extends HBaseClusterTestCase {
             TransactionalTable table2 = tables[table2Index];
 
             TransactionState transactionState = transactionManager.beginTransaction();
-            int table1Amount = Bytes.toInt(table1.get(transactionState, new Get(row).addColumn(COL)).getValue(FAMILY,
-                QUAL_A));
-            int table2Amount = Bytes.toInt(table2.get(transactionState, new Get(row).addColumn(COL)).getValue(FAMILY,
-                QUAL_A));
+            int table1Amount = Bytes.toInt(table1.get(transactionState, new Get(row).addColumn(FAMILY, QUAL_A))
+                    .getValue(FAMILY, QUAL_A));
+            int table2Amount = Bytes.toInt(table2.get(transactionState, new Get(row).addColumn(FAMILY, QUAL_A))
+                    .getValue(FAMILY, QUAL_A));
 
             table1Amount -= transferAmount;
             table2Amount += transferAmount;
@@ -312,25 +328,26 @@ public class StressTestTransactions extends HBaseClusterTestCase {
             int totalSum = 0;
             int[] amounts = new int[tables.length];
             for (int i = 0; i < tables.length; i++) {
-                int amount = Bytes.toInt(tables[i].get(transactionState, new Get(row).addColumn(COL)).getValue(FAMILY,
-                    QUAL_A));
+                int amount = Bytes.toInt(tables[i].get(transactionState, new Get(row).addColumn(FAMILY, QUAL_A))
+                        .getValue(FAMILY, QUAL_A));
                 amounts[i] = amount;
                 totalSum += amount;
             }
 
             transactionManager.tryCommit(transactionState);
 
-            for (int i = 0; i < tables.length; i++) {
-                LOG.trace(Bytes.toString(tables[i].getTableName()) + ": " + amounts[i]);
-            }
-
             if (TOTAL_SUM != totalSum) {
+                LOG.error("Consistancy failure");
+                for (int i = 0; i < tables.length; i++) {
+                    LOG.error(Bytes.toString(tables[i].getTableName()) + ": " + amounts[i]);
+                }
                 super.consistencyFailure();
             }
         }
 
     }
 
+    @Test
     public void testStressTransactions() throws IOException, InterruptedException {
         writeInitalValues();
 
@@ -371,13 +388,13 @@ public class StressTestTransactions extends HBaseClusterTestCase {
             int thisTableSum = 0;
             for (int i = 0; i < NUM_ST_ROWS; i++) {
                 byte[] row = makeSTRow(i);
-                thisTableSum += Bytes.toInt(table.get(new Get(row).addColumn(COL)).getValue(FAMILY, QUAL_A));
+                thisTableSum += Bytes.toInt(table.get(new Get(row).addColumn(FAMILY, QUAL_A)).getValue(FAMILY, QUAL_A));
             }
             Assert.assertEquals(SingleTableTransactionThread.TOTAL_SUM, thisTableSum);
 
             for (int i = 0; i < NUM_MT_ROWS; i++) {
                 byte[] row = makeMTRow(i);
-                mtSums[i] += Bytes.toInt(table.get(new Get(row).addColumn(COL)).getValue(FAMILY, QUAL_A));
+                mtSums[i] += Bytes.toInt(table.get(new Get(row).addColumn(FAMILY, QUAL_A)).getValue(FAMILY, QUAL_A));
             }
         }
 

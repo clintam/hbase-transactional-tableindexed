@@ -30,7 +30,6 @@ import org.apache.hadoop.hbase.client.RowLock;
 import org.apache.hadoop.hbase.client.Scan;
 import org.apache.hadoop.hbase.regionserver.tableindexed.IndexedRegionServer;
 import org.apache.hadoop.hbase.util.Bytes;
-import org.junit.After;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -94,14 +93,6 @@ public class TestIndexedTable {
         admin = new IndexedTableAdmin(TEST_UTIL.getConfiguration());
         admin.createIndexedTable(indexDesc);
         table = new IndexedTable(TEST_UTIL.getConfiguration(), desc.getName());
-    }
-
-    /**
-     * @throws java.lang.Exception
-     */
-    @After
-    public void tearDown() throws Exception {
-    // Nothing to do.
     }
 
     private void writeInitalRows() throws IOException {

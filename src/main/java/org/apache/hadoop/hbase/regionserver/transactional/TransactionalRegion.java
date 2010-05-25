@@ -528,7 +528,9 @@ public class TransactionalRegion extends HRegion {
             // Ignore
         }
 
-        transactionsById.remove(key);
+        synchronized (transactionsById) {
+            transactionsById.remove(key);
+        }
     }
 
     protected TransactionState getTransactionState(final long transactionId) throws UnknownTransactionException {
@@ -604,9 +606,9 @@ public class TransactionalRegion extends HRegion {
     }
 
     private Integer getMinStartSequenceNumber() {
-        LinkedList<TransactionState> transactionStates;
+        List<TransactionState> transactionStates;
         synchronized (transactionsById) {
-            transactionStates = new LinkedList<TransactionState>(transactionsById.values());
+            transactionStates = new ArrayList<TransactionState>(transactionsById.values());
         }
         Integer min = null;
         for (TransactionState transactionState : transactionStates) {
