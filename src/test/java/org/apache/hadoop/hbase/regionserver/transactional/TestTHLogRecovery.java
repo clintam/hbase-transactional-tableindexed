@@ -60,7 +60,6 @@ public class TestTHLogRecovery {
     private static final byte[] ROW3 = Bytes.toBytes("row3");
     private static final int TOTAL_VALUE = 10;
 
-    private HBaseAdmin admin;
     private TransactionManager transactionManager;
     private TransactionalTable table;
 
@@ -83,26 +82,26 @@ public class TestTHLogRecovery {
         conf.setInt("ipc.client.timeout", 10000); // and ipc timeout
         conf.setInt("hbase.client.pause", 10000); // increase client timeout
         conf.setInt("hbase.client.retries.number", 10); // increase HBase retries
-        TEST_UTIL.startMiniCluster();
+        TEST_UTIL.startMiniCluster(3);
 
         // TEST_UTIL.getTestFileSystem().delete(new Path(conf.get(HConstants.HBASE_DIR)),
         // true);
 
+        HTableDescriptor desc = new HTableDescriptor(TABLE_NAME);
+        desc.addFamily(new HColumnDescriptor(FAMILY));
+        HBaseAdmin admin = new HBaseAdmin(conf);
+        admin.createTable(desc);
+        HBaseBackedTransactionLogger.createTable();
     }
 
     @Before
     public void setUp() throws Exception {
         Configuration conf = TEST_UTIL.getConfiguration();
-
-        HTableDescriptor desc = new HTableDescriptor(TABLE_NAME);
-        desc.addFamily(new HColumnDescriptor(FAMILY));
-        admin = new HBaseAdmin(conf);
-        admin.createTable(desc);
-        table = new TransactionalTable(conf, desc.getName());
-        HBaseBackedTransactionLogger.createTable();
-
+        table = new TransactionalTable(conf, TABLE_NAME);
         transactionManager = new TransactionManager(new HBaseBackedTransactionLogger(), conf);
         writeInitalRows();
+
+        TEST_UTIL.getHBaseCluster().startRegionServer();
     }
 
     private void writeInitalRows() throws IOException {
@@ -114,34 +113,46 @@ public class TestTHLogRecovery {
 
     @Test
     public void testWithoutFlush() throws IOException, CommitUnsuccessfulException {
-        writeInitalRows();
         TransactionState state1 = makeTransaction(false);
         transactionManager.tryCommit(state1);
-        stopOrAbortRegionServer(true);
+        abortRegionServer();
 
         Thread t = startVerificationThread(1);
         t.start();
 
         threadDumpingJoin(t);
+        verifyWrites(8, 1, 1);
     }
 
     @Test
     public void testWithFlushBeforeCommit() throws IOException, CommitUnsuccessfulException {
-        writeInitalRows();
-        TransactionState state1 = makeTransaction(false);
+        TransactionState state1 = makeTransaction(true);
         flushRegionServer();
         transactionManager.tryCommit(state1);
-        stopOrAbortRegionServer(true);
+        abortRegionServer();
 
         Thread t = startVerificationThread(1);
         t.start();
         threadDumpingJoin(t);
+        verifyWrites(8, 1, 1);
     }
 
-    // FIXME, TODO
-    // public void testWithFlushBetweenTransactionWrites() {
-    // fail();
-    // }
+    @Test
+    public void testWithFlushBeforeCommitThenAnother() throws IOException, CommitUnsuccessfulException {
+        TransactionState state1 = makeTransaction(true);
+        flushRegionServer();
+        transactionManager.tryCommit(state1);
+
+        TransactionState state2 = makeTransaction(false);
+        transactionManager.tryCommit(state2);
+
+        abortRegionServer();
+
+        Thread t = startVerificationThread(1);
+        t.start();
+        threadDumpingJoin(t);
+        verifyWrites(6, 2, 2);
+    }
 
     private void flushRegionServer() {
         List<JVMClusterUtil.RegionServerThread> regionThreads = TEST_UTIL.getHBaseCluster().getRegionServerThreads();
@@ -166,11 +177,9 @@ public class TestTHLogRecovery {
     }
 
     /**
-     * Stop the region server serving TABLE_NAME.
-     * 
-     * @param abort set to true if region server should be aborted, if false it is just shut down.
+     * Abort (hard) the region server serving TABLE_NAME.
      */
-    private void stopOrAbortRegionServer(final boolean abort) {
+    private void abortRegionServer() {
         List<JVMClusterUtil.RegionServerThread> regionThreads = TEST_UTIL.getHBaseCluster().getRegionServerThreads();
 
         int server = -1;
@@ -189,14 +198,10 @@ public class TestTHLogRecovery {
             LOG.fatal("could not find region server serving table region");
             Assert.fail();
         }
-        if (abort) {
-            this.TEST_UTIL.getHBaseCluster().abortRegionServer(server);
 
-        } else {
-            this.TEST_UTIL.getHBaseCluster().stopRegionServer(server, false);
-        }
-        LOG.info(this.TEST_UTIL.getHBaseCluster().waitOnRegionServer(server) + " has been "
-                + (abort ? "aborted" : "shut down"));
+        this.TEST_UTIL.getHBaseCluster().abortRegionServer(server);
+
+        LOG.info(this.TEST_UTIL.getHBaseCluster().waitOnRegionServer(server) + " has been aborted");
     }
 
     private void verify(final int numRuns) throws IOException {
@@ -244,6 +249,15 @@ public class TestTHLogRecovery {
         table.put(transactionState, write);
 
         return transactionState;
+    }
+
+    private void verifyWrites(final int expectedRow1, final int expectedRow2, final int expectedRow3) throws IOException {
+        int row1 = Bytes.toInt(table.get(new Get(ROW1).addColumn(FAMILY, QUAL_A)).getValue(FAMILY, QUAL_A));
+        int row2 = Bytes.toInt(table.get(new Get(ROW2).addColumn(FAMILY, QUAL_A)).getValue(FAMILY, QUAL_A));
+        int row3 = Bytes.toInt(table.get(new Get(ROW3).addColumn(FAMILY, QUAL_A)).getValue(FAMILY, QUAL_A));
+        Assert.assertEquals(expectedRow1, row1);
+        Assert.assertEquals(expectedRow2, row2);
+        Assert.assertEquals(expectedRow3, row3);
     }
 
     /*
