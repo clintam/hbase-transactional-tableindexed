@@ -52,7 +52,7 @@ public class StressTestTransactions {
     private static final int NUM_TABLES = 3;
     private static final int NUM_ST_ROWS = 3;
     private static final int NUM_MT_ROWS = 3;
-    private static final int NUM_TRANSACTIONS_PER_THREAD = 10000;
+    private static final int NUM_TRANSACTIONS_PER_THREAD = 1000;
     private static final int NUM_SINGLE_TABLE_THREADS = 10;
     private static final int NUM_MULTI_TABLE_THREADS = 10;
     private static final int PRE_COMMIT_SLEEP = 10;
