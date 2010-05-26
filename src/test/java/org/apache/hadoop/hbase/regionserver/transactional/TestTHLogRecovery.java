@@ -64,11 +64,6 @@ public class TestTHLogRecovery {
     private TransactionManager transactionManager;
     private TransactionalTable table;
 
-    /** constructor */
-    public TestTHLogRecovery() {
-
-    }
-
     @BeforeClass
     public static void setUpClass() throws Exception {
         Configuration conf = TEST_UTIL.getConfiguration();

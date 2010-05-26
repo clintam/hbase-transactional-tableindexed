@@ -53,9 +53,6 @@ public class TestTransactions {
     private static TransactionalTable table;
     private static TransactionManager transactionManager;
 
-    /** constructor */
-    public TestTransactions() {}
-
     /**
      * @throws java.lang.Exception
      */

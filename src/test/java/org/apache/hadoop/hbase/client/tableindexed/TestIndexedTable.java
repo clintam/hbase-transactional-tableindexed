@@ -54,9 +54,6 @@ public class TestIndexedTable {
     private Random random = new Random();
     private static HTableDescriptor desc;
 
-    /** constructor */
-    public TestIndexedTable() {}
-
     /**
      * @throws java.lang.Exception
      */
